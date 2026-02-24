@@ -78,7 +78,7 @@ class CurrencyBeacon:
         self.api_client.reauthenticate()
 
     def get_latest_rates(
-        self, base_currencies: list[str]=["USD"], symbols: list[str] | None = None
+        self, base_currencies: list[str]=["EUR"], symbols: list[str] | None = None
     ) -> pl.DataFrame:
         """
         Retrieve the latest exchange rates.
@@ -88,7 +88,7 @@ class CurrencyBeacon:
 
         Parameters
         ----------
-        base : str, default "USD"
+        base_currencies : list[str], default ["EUR"]
             The base currency code (e.g., "USD", "EUR", "PHP").
         symbols : list[str] | None
             List of target currency codes to retrieve. If None, returns all available
@@ -152,7 +152,7 @@ class CurrencyBeacon:
             yield enforce_schema(df, SCHEMAS["EXCHANGE_RATES"])
 
     def get_historical_rates(
-        self, date: str | date, base: str = "USD", symbols: list[str] | None = None
+        self, date: str | date, base: str = "EUR", symbols: list[str] | None = None
     ) -> pl.DataFrame:
         """
         Retrieve historical exchange rates for a specific date.
@@ -165,7 +165,7 @@ class CurrencyBeacon:
         date : str | date
             The date for which to retrieve rates. Can be a string in "YYYY-MM-DD" format
             or a datetime.date object.
-        base : str, default "USD"
+        base : str, default "EUR"
             The base currency code.
         symbols : list[str] | None
             List of target currency codes. If None, returns all available currencies.
@@ -238,7 +238,7 @@ class CurrencyBeacon:
         self,
         start_date: str | date,
         end_date: str | date,
-        base: str = "USD",
+        base_currencies: list[str] = ["EUR"],
         symbols: list[str] | None = None,
         batch_size: int = 7,
     ) -> Generator[pl.DataFrame, None, None]:
@@ -254,7 +254,7 @@ class CurrencyBeacon:
             The start date for the time series.
         end_date : str | date
             The end date for the time series.
-        base : str, default "USD"
+        base_currencies : list[str], default ["EUR"]
             The base currency code.
         symbols : list[str] | None
             List of target currency codes.
@@ -268,51 +268,52 @@ class CurrencyBeacon:
             DataFrames containing rates for each batch of dates.
 
         """
-        # Convert dates to date objects
-        if isinstance(start_date, str):
-            start_date = datetime.strptime(start_date, "%Y-%m-%d").astimezone(UTC).date()
-        if isinstance(end_date, str):
-            end_date = datetime.strptime(end_date, "%Y-%m-%d").astimezone(UTC).date()
+        for base in base_currencies:
+            # Convert dates to date objects
+            if isinstance(start_date, str):
+                start_date = datetime.strptime(start_date, "%Y-%m-%d").astimezone(UTC).date()
+            if isinstance(end_date, str):
+                end_date = datetime.strptime(end_date, "%Y-%m-%d").astimezone(UTC).date()
 
-        total_days = (end_date - start_date).days + 1
-        logger.info(
-            f"📈 Fetching time series data for {total_days} days "
-            f"({start_date} to {end_date})"
-        )
+            total_days = (end_date - start_date).days + 1
+            logger.info(
+                f"📈 Fetching time series data for {total_days} days "
+                f"({start_date} to {end_date})"
+            )
 
-        current_date = start_date
-        batch_count = 0
+            current_date = start_date
+            batch_count = 0
 
-        while current_date <= end_date:
-            batch_dfs = []
-            batch_end = min(current_date + timedelta(days=batch_size - 1), end_date)
+            while current_date <= end_date:
+                batch_dfs = []
+                batch_end = min(current_date + timedelta(days=batch_size - 1), end_date)
 
-            # Fetch each day in the batch
-            date_cursor = current_date
-            while date_cursor <= batch_end:
-                try:
-                    df = self.get_historical_rates(
-                        date=date_cursor, base=base, symbols=symbols
+                # Fetch each day in the batch
+                date_cursor = current_date
+                while date_cursor <= batch_end:
+                    try:
+                        df = self.get_historical_rates(
+                            date=date_cursor, base=base, symbols=symbols
+                        )
+                        batch_dfs.append(df)
+                    except Exception as e:
+                        logger.error(f"❌ Failed to fetch rates for {date_cursor}: {e}")
+
+                    date_cursor += timedelta(days=1)
+
+                # Combine batch
+                if batch_dfs:
+                    batch_count += 1
+                    combined_df = pl.concat(batch_dfs)
+                    logger.info(
+                        f"📦 Batch #{batch_count}: {len(batch_dfs)} days, "
+                        f"{combined_df.height} total rows"
                     )
-                    batch_dfs.append(df)
-                except Exception as e:
-                    logger.error(f"❌ Failed to fetch rates for {date_cursor}: {e}")
+                    yield combined_df
 
-                date_cursor += timedelta(days=1)
+                current_date = batch_end + timedelta(days=1)
 
-            # Combine batch
-            if batch_dfs:
-                batch_count += 1
-                combined_df = pl.concat(batch_dfs)
-                logger.info(
-                    f"📦 Batch #{batch_count}: {len(batch_dfs)} days, "
-                    f"{combined_df.height} total rows"
-                )
-                yield combined_df
-
-            current_date = batch_end + timedelta(days=1)
-
-        logger.info(f"✅ Completed time series fetch: {batch_count} batches")
+            logger.info(f"✅ Completed time series fetch for {base}: {batch_count} batches")
 
     def convert_currency(
         self,
