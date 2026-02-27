@@ -1,5 +1,7 @@
-from infolio.apis.financial import CurrencyBeacon
+from infolio.apis.financial import Alpaca, CurrencyBeacon, YahooFinance
 
 __all__ = [
-    "CurrencyBeacon"
+    "Alpaca",
+    "CurrencyBeacon",
+    "YahooFinance",
 ]

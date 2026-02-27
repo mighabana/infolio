@@ -34,6 +34,7 @@ dependencies = [
     "gspread-dataframe>=4.0.0",
     "gspread-formatting>=1.2.1",
     "clickhouse-connect>=0.10.0",
+    "yfinance>=1.2.0",
 ]
 
 # list of possible classifiers: https://pypi.org/classifiers/
